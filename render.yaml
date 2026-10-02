@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: leader-finder-v9
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.11"
+      - key: AUTO_HISTORY
+        value: "1"
+      - key: UNIVERSE_SIZE
+        value: "80"
+      - key: SUPABASE_STATE_TABLE
+        value: leader_finder_state
+      - key: SUPABASE_STATE_ID
+        value: leader_finder_v9
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: KRX_API_KEY
+        sync: false
+      - key: NAVER_CLIENT_ID
+        sync: false
+      - key: NAVER_CLIENT_SECRET
+        sync: false

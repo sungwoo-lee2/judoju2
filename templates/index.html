@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Leader Finder v18 KRX + NAVER</title>
+  <link rel="stylesheet" href="/static/style.css?v=18">
+  <style>
+    /* Keep news controls readable even if a deployment serves an older CSS file. */
+    #news button,#ai button{background:#17375d!important;color:#f4f8ff!important;border:1px solid #527ba5!important}
+    #news button:disabled,#ai button:disabled{background:#24384d!important;color:#cbd8e8!important;opacity:1!important}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><div class="eyebrow">KOREA STOCK LEADERSHIP SCANNER</div><h1>LEADER FINDER <span>v18 KRX + NAVER</span></h1><p>KRX 공식 데이터와 네이버 최신 뉴스를 결합해 주도 섹터·종목·모멘텀을 탐색합니다.</p></div>
+    <button id="refreshBtn">↻ 데이터 새로고침</button>
+  </header>
+
+  <section class="hero">
+    <div><small>오늘의 탐색 모드</small><h2>주도주 집중 탐색</h2><p>공식 일별 종가 · 등락률 · 거래대금 | 점수: 거래대금 순위 70% + 등락률 순위 30%</p></div>
+    <div class="hero-right"><strong>TOP 20</strong><small id="source">{{snap.source}}</small></div>
+  </section>
+
+  <div class="status"><span id="updated">업데이트 {{snap.updated_at or '-'}}</span><span id="flowStatus">{{snap.get('flow_status', '수급 상태 확인 중')}}</span><span id="storageStatus">저장소 확인 중</span></div>
+
+  <p id="autoHistoryStatus" role="status">52주 분석용 과거 데이터 자동 수집 상태 확인 중…</p>
+  <details class="logic-card"><summary>과거 데이터 · 기간 직접 지정 (선택)</summary><p>52주 고점 계산을 위해 최근 400일을 자동 수집합니다. 더 긴 기간이 필요할 때만 아래에서 지정하세요. 저장된 날짜는 재사용합니다.</p>
+<label>시작 <input type="date" id="historyStart" min="2010-01-04"></label>
+<label>종료 <input type="date" id="historyEnd"></label>
+<button id="historyLoad">과거 데이터 불러오기</button><a href="/api/history/export">저장된 데이터 CSV 다운로드</a>
+<p id="historyProgress"></p><p>원종가 기준입니다. 액면분할·병합 등 기업행사를 반영한 수정주가가 아닙니다. 데이터 부족 시 지표를 표시하지 않습니다.</p>
+<div id="historyIndicators"></div></details>
+<script>
+const dateText=d=>d.toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'});
+let end=new Date();end.setDate(end.getDate()-1);let start=new Date(end);start.setDate(start.getDate()-60);
+document.getElementById('historyStart').value=dateText(start);document.getElementById('historyEnd').value=dateText(end);
+let wasRunning=false;
+async function historyPoll(){try{let s=await(await fetch('/api/history/status')).json();
+document.getElementById('historyProgress').textContent=(s.running?'수집 중':'대기 / 완료')+' · '+s.done+'/'+s.total+' · 저장 '+s.cached_market_days+' 시장일 · '+(s.first_day||'-')+' ~ '+(s.last_day||'-')+(s.error?' · 오류: '+s.error:'');
+document.getElementById('autoHistoryStatus').textContent='52주 분석자료 자동 수집 · '+document.getElementById('historyProgress').textContent;
+document.getElementById('historyLoad').disabled=s.running;
+if(wasRunning&&!s.running&&!s.error)location.reload();wasRunning=s.running;
+let snap=await(await fetch('/api/snapshot')).json();let root=document.getElementById('historyIndicators');root.replaceChildren();
+for(let x of snap.items||[]){let p=document.createElement('p');p.textContent=x.name+' | 10일선 '+(x.ma10??'자료 부족')+' | 20일선 '+(x.ma20??'자료 부족')+' | 거래대금 '+(x.amount_ratio??'자료 부족')+'배';root.append(p);}
+}catch(e){document.getElementById('historyProgress').textContent='상태 조회 실패: '+e.message;}}
+document.getElementById('historyLoad').onclick=async()=>{let s=await(await fetch('/api/history/load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({start:document.getElementById('historyStart').value,end:document.getElementById('historyEnd').value})})).json();if(!s.ok)alert(s.error);historyPoll();};
+historyPoll();setInterval(historyPoll,5000);
+</script>
+  <nav><button class="tab active" data-target="news">뉴스·관심도</button><button class="tab" data-target="ai">네이버 시장탐색</button><button class="tab" data-target="early">EARLY LEADER</button><button class="tab" data-target="pullbacks">눌림목 후보</button><button class="tab" data-target="lifecycle">생애주기</button><button class="tab" data-target="rotations">대장 교체</button><button class="tab" data-target="performance">성과검증</button><button class="tab" data-target="leaders">주도주 TOP20</button><button class="tab" data-target="sectors">주도섹터 TOP10</button><button class="tab" data-target="changes">진입·탈락</button><button class="tab" data-target="logic">산식</button></nav>
+
+  <main>
+    <section id="news" class="panel active">
+      <div class="section-title"><div><h3>주도주 뉴스 데스크</h3><p>네이버 뉴스 검색 · KRX 주도주 관련 기사 · 종목 검색 관심도</p></div></div>
+      <p id="newsConnection">네이버 연결 설정 확인 중…</p>
+      <div class="news-controls"><input id="newsQuery" placeholder="종목명 또는 주제 입력" maxlength="100" value="국내 증시"><button id="newsSearch">기사 검색</button><button id="newsLeaders">주도주 TOP20 기사</button><button id="newsSaved">기사 저장함</button></div>
+      <div id="newsSectors" class="news-controls"></div>
+      <div class="news-controls"><label>기사 분류 <select id="newsTag"><option value="">전체</option><option>수주·계약</option><option>실적</option><option>투자·증설</option><option>리스크</option></select></label><button id="newsExport">모임용 기사 목록 복사</button></div>
+      <p id="newsMessage">종목명이나 섹터를 선택해 최신 기사를 검색하세요. 기사 분류는 제목·검색 설명의 단어 일치 기준입니다.</p>
+      <div id="newsCards" class="news-grid"></div>
+      <div class="logic-card"><h3>종목 검색 관심도 비교 · 최근 30일</h3><p>최대 5개 종목을 쉼표로 구분하세요. 상대 검색 지수이며 실제 검색 횟수나 수급이 아닙니다.</p>
+      <input id="trendNames" placeholder="삼성전자,SK하이닉스,한화에어로스페이스" maxlength="260"><button id="trendCompare">관심도 비교</button><button id="trendTop">TOP5 종목 넣기</button><p id="trendMessage"></p><div id="trendChart"></div></div>
+      <p>기사 저장함은 현재 브라우저에 보관됩니다. 기사 원문은 출처 링크에서 확인하세요.</p>
+    </section>
+    <section id="ai" class="panel">
+      <div class="section-title"><div><h3>네이버 시장탐색</h3><p>KRX 후보점수 70%와 네이버 최신 기사량 30%를 결합해 주도 섹터와 종목을 정리합니다.</p></div><button id="aiScanBtn">네이버 최신시장 검색</button></div>
+      <div id="aiStatus" class="emptybox">네이버 API 연결 상태 확인 중…</div>
+      <div id="aiSummary" class="logic-card" style="display:none"></div>
+      <div class="early-grid" id="aiCandidates"></div>
+      <div id="aiSources"></div><p>생성형 AI 판단이 아니라 KRX 수치와 네이버 기사 검색 결과를 이용한 규칙 기반 신호입니다.</p>
+    </section>
+<section id="diagPanel" style="margin:14px 0;padding:14px;border:1px solid #333;border-radius:12px"><b>데이터 연결 진단</b><span id="diagSummary" style="margin-left:12px">확인 중…</span><div id="diagItems" style="margin-top:8px;font-size:13px"></div></section>
+    <section id="early" class="panel">
+      <div class="section-title"><div><h3>EARLY LEADER · 초기 주도주 후보</h3><p>저장된 과거 자료 기준: 거래대금 1.5배 이상 + 20일선 상승 + 종가가 20일선 위</p></div><span class="early-note">TOP 12</span></div>
+      <div class="early-grid" id="earlyGrid">
+        {% for r in snap.get('early_leaders', []) %}
+        <button class="early-card early-row" data-ticker="{{r.ticker}}">
+          <div class="early-top"><span class="early-rank">#{{r.early_rank or loop.index}}</span><span class="early-label">{{r.early_label}}</span></div>
+          <h4>{{r.name}}</h4><p>{{r.ticker}} · {{r.sector}}</p>
+          <div class="early-score"><strong>{{r.early_score}}</strong><span>/100</span></div>
+          <div class="early-signals">{% for x in r.early_signals[:3] %}<span>{{x}}</span>{% endfor %}</div>
+        </button>
+        {% endfor %}
+      </div>
+    </section>
+
+
+    <section id="pullbacks" class="panel">
+      <div class="section-title"><div><h3>눌림목 후보 TOP12</h3><p>추세는 살아 있지만 5일선·10일선 부근으로 조정된 종목을 찾습니다.</p></div></div>
+      <div class="early-grid" id="pullbackGrid"></div>
+    </section>
+
+    <section id="lifecycle" class="panel">
+      <div class="section-title"><div><h3>주도주 생애주기</h3><p>첫 포착 이후 며칠째 주도 상태인지와 단계 변화를 누적합니다.</p></div></div>
+      <div class="life-grid" id="lifeGrid"></div>
+    </section>
+
+    <section id="rotations" class="panel">
+      <div class="section-title"><div><h3>섹터 대장 교체 감지</h3><p>직전 스냅샷의 섹터 1위와 현재 섹터 1위가 바뀌었는지 확인합니다.</p></div></div>
+      <div class="rotation-list" id="rotationList"></div>
+    </section>
+
+    <section id="performance" class="panel">
+      <div class="section-title"><div><h3>포착 성과검증</h3><p>포착 당시 종가 대비 이후 수익률과 최대 상승·하락을 누적합니다.</p></div></div>
+      <div class="kpi-grid" id="perfKpis"></div>
+      <div class="perf-list" id="perfList"></div>
+    </section>
+
+    <section id="leaders" class="panel">
+      <div class="section-title"><div><h3>주도주 후보 TOP20</h3><p>종목을 누르면 선정 이유와 세부점수를 볼 수 있습니다.</p></div><input id="search" placeholder="종목명 / 코드 검색"></div>
+      <div class="table" id="leadersTable">
+        <div class="tr head"><span>순위</span><span>종목</span><span>섹터</span><span>등락</span><span>거래대금</span><span>점수</span><span>단계</span></div>
+        {% for r in snap['items'] %}
+        <button class="tr stock-row" data-ticker="{{r.ticker}}" data-name="{{r.name}}">
+          <span class="rank">#{{r.rank or loop.index}} {% if r.rank_change %}<small class="rankmove">{{'▲' if r.rank_change > 0 else '▼'}}{{r.rank_change|abs}}</small>{% endif %}</span>
+          <span><b>{{r.name}}</b><small>{{r.ticker}} · {{r.market}}</small></span>
+          <span>{{r.sector}}</span><span class="chg {{'up' if r.change > 0 else 'down' if r.change < 0 else ''}}">{{'%+.2f'|format(r.change)}}%</span>
+          <span>{{'{:,.0f}'.format(r.amount/100000000)}}억</span><span class="score">{{r.score}}</span><span><em class="stage {{r.stage}}">{{r.stage}}</em></span>
+        </button>
+        {% endfor %}
+      </div>
+    </section>
+
+
+    <section id="changes" class="panel">
+      <div class="section-title"><div><h3>TOP20 변화</h3><p>직전 저장 스냅샷과 비교한 신규진입·탈락 종목입니다.</p></div></div>
+      <div class="change-grid">
+        <article class="change-card"><h4>신규진입</h4><div id="enteredList"></div></article>
+        <article class="change-card"><h4>탈락</h4><div id="exitedList"></div></article>
+      </div>
+    </section>
+
+    <section id="sectors" class="panel">
+      <div class="section-title"><div><h3>주도섹터 TOP10</h3><p>섹터 구성 종목의 주도주 점수와 당일 강도를 종합합니다.</p></div></div>
+      <div class="sector-grid" id="sectorGrid">
+        {% for s in snap.get('sectors', []) %}
+        <article class="sector-card"><div><span class="sector-rank">{{loop.index}}</span><b>{{s.sector}}</b><strong>{{s.score}}</strong></div><div class="bar"><i style="width:{{s.score}}%"></i></div><p>{{s.leaders|join(' · ')}}</p></article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section id="logic" class="panel">
+      <div class="logic-card"><h3>공식 일별 후보점수</h3><p>전체 응답 종목에서 거래대금 백분위 70점 + 등락률 백분위 30점을 합산합니다. 거래대금 상위 후보군을 점수로 정렬합니다. 수급은 미제공입니다. 과거 데이터 수집 후 5·10·20일선, 직전 20일 평균 대비 거래대금 배수를 계산합니다. 초기 후보는 거래대금 1.5배 이상·20일선 상승·종가가 20일선 위인 종목입니다. 후보점수에는 과거 지표를 아직 반영하지 않습니다. 기준일은 한국시간 전일부터 최대 14일 내 두 시장 응답이 모두 있는 날짜입니다.</p></div>
+    </section>
+  </main>
+</div>
+
+<div class="modal" id="modal"><div class="modal-card"><button class="close" id="closeModal">×</button><div id="detail"></div></div></div>
+<div class="toast" id="toast"></div>
+<script>window.INITIAL={{ snap|tojson }};</script>
+<script src="/static/app.js"></script>
+<script src="/static/news.js"></script>
+</body></html>
